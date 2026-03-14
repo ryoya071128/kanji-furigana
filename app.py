@@ -31,6 +31,7 @@ def extract_region_text(filepath, page_num, x0, top, x1, bottom):
     """
     laparams = LAParams(boxes_flow=0.5, word_margin=0.1)
     boxes = []
+    seen_box_texts = set()
 
     with open(filepath, 'rb') as f:
         for layout in extract_pages(f, laparams=laparams, page_numbers=[page_num - 1]):
@@ -42,12 +43,17 @@ def extract_region_text(filepath, page_num, x0, top, x1, bottom):
             for el in layout:
                 if isinstance(el, LTTextBox):
                     ex0, ey0, ex1, ey1 = el.bbox
-                    # 選択範囲と重なるテキストボックスを収集
+                    # 選択範囲と重なるテキストボックスを収集（同一テキストの重複除外）
                     if ex0 < x1 and ex1 > x0 and ey0 < pm_y1 and ey1 > pm_y0:
-                        boxes.append((-ey1, ex0, el.get_text().strip()))
+                        t = el.get_text().strip()
+                        if t and t not in seen_box_texts:
+                            seen_box_texts.add(t)
+                            boxes.append((-ey1, ex0, t))
 
     boxes.sort()  # 上から下、左から右の順に並び替え
-    return '\n'.join(t for _, _, t in boxes if t)
+    raw = '\n'.join(t for _, _, t in boxes if t)
+    # 日本語文字間の改行・空白を除去（pdfminer が単語を分割することへの対策）
+    return re.sub(r'(?<=[^\x00-\x7F])\s+(?=[^\x00-\x7F])', '', raw)
 
 
 def get_word_readings(text, unique_only=False):

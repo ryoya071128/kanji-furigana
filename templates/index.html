@@ -279,8 +279,8 @@
     .td-no { color: #bbb; font-size: 0.78rem; width: 38px; text-align: center; }
     .td-word { font-weight: bold; }
     .td-furi { color: #1a44c8; }
-    .td-furi[contenteditable]:hover { background: #f0f3ff; cursor: text; }
-    .td-furi[contenteditable]:focus { outline: 2px solid #4f6ef7; border-radius: 2px; background: white; }
+    .td-furi[contenteditable]:hover, .td-word[contenteditable]:hover { background: #f0f3ff; cursor: text; }
+    .td-furi[contenteditable]:focus, .td-word[contenteditable]:focus { outline: 2px solid #4f6ef7; border-radius: 2px; background: white; }
     .td-del { width: 30px; text-align: center; }
     .del-btn {
       background: none; border: 1px solid #e0e0e0; color: #c00;
@@ -326,7 +326,7 @@
       table { font-size: 10.5pt; }
       thead th { background: #f0f0f0 !important; border: 1px solid #999 !important; }
       tbody td { border: 1px solid #bbb !important; padding: 0.35rem 0.5rem; }
-      .td-furi[contenteditable] { outline: none !important; }
+      .td-furi[contenteditable], .td-word[contenteditable] { outline: none !important; }
       .td-del, .del-btn { display: none !important; }
     }
   </style>
@@ -398,7 +398,7 @@
           <span>振り仮名一覧</span>
           <span class="badge" id="count-badge"></span>
         </div>
-        <p class="edit-hint">✏️ 読み仮名をクリックして編集・× で行を削除できます</p>
+        <p class="edit-hint">✏️ 単語・読み仮名をクリックして編集、× で行を削除できます</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -649,7 +649,12 @@
 
     const tdWord = document.createElement('td');
     tdWord.className = 'td-word';
+    tdWord.contentEditable = 'true';
+    tdWord.spellcheck = false;
     tdWord.textContent = word;
+    tdWord.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); tdWord.blur(); }
+    });
 
     const tdFuri = document.createElement('td');
     tdFuri.className = 'td-furi';
