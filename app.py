@@ -11,18 +11,18 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
-KANJI_RE = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
+KANJI_RE      = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
+PURE_KANJI_RE = re.compile(r'^[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]+$')
 
-# サーバーレス環境向けに遅延初期化
-_tagger = None
+# サーバーレス環境向けに遅延初期化（pykakasi は純Python・軽量）
+_kakasi = None
 
-def get_tagger():
-    global _tagger
-    if _tagger is None:
-        import fugashi
-        import unidic_lite
-        _tagger = fugashi.Tagger(f'-d {unidic_lite.DICDIR}')
-    return _tagger
+def get_kakasi():
+    global _kakasi
+    if _kakasi is None:
+        import pykakasi
+        _kakasi = pykakasi.kakasi()
+    return _kakasi
 
 
 def extract_region_text(filepath, page_num, x0, top, x1, bottom):
@@ -50,25 +50,11 @@ def extract_region_text(filepath, page_num, x0, top, x1, bottom):
     return '\n'.join(t for _, _, t in boxes if t)
 
 
-def kata_to_hira(text):
-    return ''.join(chr(ord(c) - 0x60) if '\u30a1' <= c <= '\u30f6' else c for c in text)
-
-
-def get_reading(word):
-    for attr in ('kana', 'pron'):
-        try:
-            r = getattr(word.feature, attr, None)
-            if r and r != '*':
-                return kata_to_hira(r)
-        except Exception:
-            pass
-    return None
-
-
 def get_word_readings(text, unique_only=False):
-    """隣接する漢字形態素をひとつの複合語としてまとめる。
+    """隣接する漢字セグメントをひとつの複合語としてまとめる。
     例: 人手(ひとで) + 不足(ふそく) → 人手不足(ひとでふそく)
     """
+    kks = get_kakasi()
     readings = []
     seen = set()
     pend_surf = ''
@@ -76,22 +62,29 @@ def get_word_readings(text, unique_only=False):
 
     def flush():
         nonlocal pend_surf, pend_read
-        if not pend_surf:
+        if not pend_surf or not pend_read:
+            pend_surf = pend_read = ''
             return
         surf, read = pend_surf, pend_read
         pend_surf = pend_read = ''
-        if not read:
-            return
         if unique_only and surf in seen:
             return
         seen.add(surf)
         readings.append({'word': surf, 'furigana': read})
 
-    for word in get_tagger()(text):
-        surface = word.surface
-        if KANJI_RE.search(surface):
-            pend_surf += surface
-            pend_read += get_reading(word) or ''
+    for item in kks.convert(text):
+        orig = item['orig']
+        hira = item['hira']
+        if PURE_KANJI_RE.match(orig):
+            # 純粋な漢字のみ → 隣接するものと結合（例: 人手+不足 → 人手不足）
+            pend_surf += orig
+            pend_read += hira
+        elif KANJI_RE.search(orig):
+            # 漢字+仮名混合（例: 食べる）→ 前の蓄積を確定してから単独で追加
+            flush()
+            if hira and not unique_only or orig not in seen:
+                seen.add(orig)
+                readings.append({'word': orig, 'furigana': hira})
         else:
             flush()
 
