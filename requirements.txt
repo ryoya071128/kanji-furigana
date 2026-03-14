@@ -1,0 +1,4 @@
+flask
+pdfplumber
+fugashi[unidic-lite]
+werkzeug

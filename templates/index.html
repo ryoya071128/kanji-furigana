@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>漢字読み仮名抽出ツール</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { height: 100%; overflow: hidden; font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; color: #333; }
+
+    /* ── Layout ── */
+    .app { display: flex; flex-direction: column; height: 100vh; background: #1e1e2e; }
+
+    /* Header */
+    .header {
+      flex-shrink: 0;
+      height: 52px;
+      background: #16213e;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0 1.2rem;
+      border-bottom: 1px solid #333;
+    }
+    .header h1 { font-size: 1rem; color: #ddd; font-weight: 600; flex: 1; }
+    .open-btn {
+      padding: 0.38rem 1rem;
+      background: #4f6ef7;
+      color: white;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.88rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .open-btn:hover { background: #3a56d4; }
+    #file-input { display: none; }
+    .fname-label { font-size: 0.78rem; color: #aaa; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Main split */
+    .main { flex: 1; display: flex; overflow: hidden; }
+
+    /* Viewer */
+    .viewer {
+      flex: 1;
+      overflow: auto;
+      background: #444;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem;
+      gap: 0.75rem;
+    }
+
+    /* Empty state */
+    .viewer-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      color: #aaa;
+      text-align: center;
+    }
+    .viewer-empty .big-icon { font-size: 4rem; opacity: 0.5; }
+    .viewer-empty p { font-size: 0.95rem; line-height: 1.7; }
+
+    /* Page nav bar */
+    .page-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(0,0,0,0.45);
+      padding: 0.35rem 0.8rem;
+      border-radius: 8px;
+      color: #eee;
+      font-size: 0.85rem;
+    }
+    .nav-btn {
+      background: none;
+      border: 1px solid #666;
+      color: #ddd;
+      padding: 0.18rem 0.6rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .nav-btn:hover:not(:disabled) { background: rgba(255,255,255,0.15); }
+    .nav-btn:disabled { opacity: 0.35; cursor: default; }
+    .scale-select {
+      background: #333;
+      color: #ddd;
+      border: 1px solid #666;
+      padding: 0.15rem 0.4rem;
+      border-radius: 5px;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .hint-label { font-size: 0.78rem; color: #bbb; margin-left: 0.4rem; }
+
+    /* Canvas container */
+    .canvas-wrap {
+      position: relative;
+      display: inline-block;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+      cursor: crosshair;
+    }
+    #pdf-canvas { display: block; }
+
+    /* Selection overlay (transparent, catches mouse events) */
+    .sel-overlay {
+      position: absolute;
+      inset: 0;
+      cursor: crosshair;
+      user-select: none;
+    }
+
+    /* Selection rectangle */
+    .sel-box {
+      position: absolute;
+      border: 2px solid #4f6ef7;
+      background: rgba(79, 110, 247, 0.12);
+      display: none;
+      pointer-events: none;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 340px;
+      flex-shrink: 0;
+      background: #f5f5f7;
+      border-left: 1px solid #ddd;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Sidebar sections */
+    .sb-section {
+      padding: 1rem;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .sb-section:last-child { border-bottom: none; }
+
+    /* No file state */
+    .sb-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      padding: 2rem;
+      text-align: center;
+      font-size: 0.88rem;
+      line-height: 1.8;
+    }
+    .sb-empty .icon { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.5; }
+
+    /* Selection info */
+    .sel-info-box {
+      background: #e8ecff;
+      border: 1px solid #b0bff7;
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.83rem;
+      color: #2a3a9a;
+      margin-bottom: 0.75rem;
+      min-height: 38px;
+    }
+
+    .options-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.83rem;
+      color: #555;
+      margin-bottom: 0.75rem;
+    }
+
+    .analyze-btn {
+      width: 100%;
+      padding: 0.65rem;
+      background: #4f6ef7;
+      color: white;
+      border: none;
+      border-radius: 9px;
+      font-size: 0.93rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .analyze-btn:hover:not(:disabled) { background: #3a56d4; }
+    .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Spinner */
+    .spinner {
+      text-align: center;
+      padding: 0.6rem;
+      font-size: 0.85rem;
+      color: #666;
+    }
+    .spinner::before {
+      content: '';
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #ccc;
+      border-top-color: #4f6ef7;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.4rem;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: #fff0f0;
+      border: 1px solid #fcc;
+      border-radius: 7px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.82rem;
+      color: #c00;
+      margin-top: 0.5rem;
+    }
+
+    /* Results */
+    .results-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.8rem 1rem 0.4rem;
+    }
+    .results-header span { font-size: 0.9rem; font-weight: bold; color: #333; flex: 1; }
+    .badge {
+      background: #e8ecff;
+      color: #4f6ef7;
+      font-size: 0.74rem;
+      font-weight: bold;
+      padding: 0.1rem 0.55rem;
+      border-radius: 20px;
+    }
+
+    .edit-hint {
+      padding: 0 1rem 0.5rem;
+      font-size: 0.74rem;
+      color: #999;
+    }
+
+    .table-wrap {
+      flex: 1;
+      overflow-y: auto;
+      border-top: 1px solid #e5e5e5;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    thead th {
+      position: sticky; top: 0;
+      background: #f0f0f0;
+      padding: 0.5rem 0.7rem;
+      text-align: left;
+      font-weight: bold;
+      border-bottom: 2px solid #ddd;
+      color: #444;
+      font-size: 0.82rem;
+    }
+    tbody tr:nth-child(even) { background: #fafafa; }
+    tbody tr:hover { background: #f0f3ff; }
+    tbody td { padding: 0.45rem 0.7rem; border-bottom: 1px solid #eee; vertical-align: middle; }
+    .td-no { color: #bbb; font-size: 0.78rem; width: 38px; text-align: center; }
+    .td-word { font-weight: bold; }
+    .td-furi { color: #1a44c8; }
+    .td-furi[contenteditable]:hover { background: #f0f3ff; cursor: text; }
+    .td-furi[contenteditable]:focus { outline: 2px solid #4f6ef7; border-radius: 2px; background: white; }
+
+    .result-actions {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border-top: 1px solid #e5e5e5;
+      background: #f5f5f7;
+    }
+    .action-btn {
+      flex: 1;
+      padding: 0.45rem 0.4rem;
+      font-size: 0.78rem;
+      font-weight: bold;
+      border: 1px solid #ccc;
+      border-radius: 7px;
+      cursor: pointer;
+      background: white;
+      color: #444;
+      transition: background 0.15s;
+    }
+    .action-btn:hover { background: #eee; }
+    .action-btn.primary { background: #4f6ef7; color: white; border-color: #4f6ef7; }
+    .action-btn.primary:hover { background: #3a56d4; }
+
+    /* ── PRINT STYLES ── */
+    @media print {
+      html, body { height: auto; overflow: visible; }
+      .app { display: block; height: auto; }
+      .header, .viewer, .sb-empty, .sb-section, .edit-hint, .result-actions, .results-header .badge { display: none !important; }
+      .main { display: block; }
+      .sidebar { width: 100%; border: none; display: block; }
+      .results-wrap { display: block; overflow: visible; }
+      .results-header { padding: 0 0 0.5rem; }
+      .results-header span { font-size: 1rem; }
+      .table-wrap { overflow: visible; max-height: none; border: none; }
+      table { font-size: 10.5pt; }
+      thead th { background: #f0f0f0 !important; border: 1px solid #999 !important; }
+      tbody td { border: 1px solid #bbb !important; padding: 0.35rem 0.5rem; }
+      .td-furi[contenteditable] { outline: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <h1>漢字読み仮名抽出ツール</h1>
+    <span class="fname-label" id="fname-label"></span>
+    <button class="open-btn" id="open-btn">PDFを開く</button>
+    <input type="file" id="file-input" accept=".pdf">
+  </header>
+
+  <div class="main">
+
+    <!-- PDF Viewer -->
+    <div class="viewer" id="viewer">
+      <div class="viewer-empty" id="viewer-empty">
+        <div class="big-icon">📄</div>
+        <p>「PDFを開く」でファイルを選択してください<br>ページ上でドラッグして振り仮名を付ける範囲を指定します</p>
+      </div>
+      <div id="viewer-main" style="display:none; flex-direction:column; align-items:center; gap:0.75rem; width:100%">
+        <div class="page-nav">
+          <button class="nav-btn" id="prev-btn">◀</button>
+          <span id="page-info">1 / 1</span>
+          <button class="nav-btn" id="next-btn">▶</button>
+          <select class="scale-select" id="scale-sel">
+            <option value="1">100%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5" selected>150%</option>
+            <option value="2">200%</option>
+          </select>
+          <span class="hint-label">ドラッグで範囲選択</span>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas id="pdf-canvas"></canvas>
+          <div class="sel-overlay" id="sel-overlay"></div>
+          <div class="sel-box" id="sel-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+      <!-- Empty state -->
+      <div class="sb-empty" id="sb-empty">
+        <div class="icon">✏️</div>
+        PDFを開いて、<br>振り仮名を付けたい部分を<br>ドラッグで選択してください
+      </div>
+
+      <!-- Controls (shown after file loaded) -->
+      <div class="sb-section" id="sb-controls" style="display:none">
+        <div class="sel-info-box" id="sel-info">ページ上でドラッグして範囲を選択してください</div>
+        <div class="options-row">
+          <input type="checkbox" id="unique-only">
+          <label for="unique-only">重複単語を除く</label>
+        </div>
+        <button class="analyze-btn" id="analyze-btn" disabled>この範囲を解析する</button>
+        <div class="spinner" id="spinner" style="display:none">解析中…</div>
+        <div class="error-box" id="error-box" style="display:none"></div>
+      </div>
+
+      <!-- Results -->
+      <div class="results-wrap" id="results-wrap" style="display:none">
+        <div class="results-header">
+          <span>振り仮名一覧</span>
+          <span class="badge" id="count-badge"></span>
+        </div>
+        <p class="edit-hint">✏️ 読み仮名をクリックして編集できます</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="td-no">No.</th>
+                <th>単語</th>
+                <th>読み仮名</th>
+              </tr>
+            </thead>
+            <tbody id="result-body"></tbody>
+          </table>
+        </div>
+        <div class="result-actions">
+          <button class="action-btn primary" id="print-btn">印刷</button>
+          <button class="action-btn" id="dl-btn">HTMLをDL</button>
+          <button class="action-btn" id="csv-btn">CSV</button>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+</div>
+
+<script>
+  // ── PDF.js setup ──
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  // ── State ──
+  let pdfDoc      = null;
+  let curPage     = 1;
+  let totPages    = 0;
+  let scale       = 1.5;
+  let selectedFile = null;   // File object kept for re-sending with each analyze
+  let filename    = '';
+  let selection   = null;    // { page, x0, top, x1, bottom } in PDF pts
+
+  // ── Elements ──
+  const openBtn      = document.getElementById('open-btn');
+  const fileInput    = document.getElementById('file-input');
+  const fnameLabel   = document.getElementById('fname-label');
+  const viewerEmpty  = document.getElementById('viewer-empty');
+  const viewerMain   = document.getElementById('viewer-main');
+  const prevBtn      = document.getElementById('prev-btn');
+  const nextBtn      = document.getElementById('next-btn');
+  const pageInfo     = document.getElementById('page-info');
+  const scaleSel     = document.getElementById('scale-sel');
+  const canvas       = document.getElementById('pdf-canvas');
+  const selOverlay   = document.getElementById('sel-overlay');
+  const selBox       = document.getElementById('sel-box');
+  const sbEmpty      = document.getElementById('sb-empty');
+  const sbControls   = document.getElementById('sb-controls');
+  const selInfo      = document.getElementById('sel-info');
+  const uniqueOnly   = document.getElementById('unique-only');
+  const analyzeBtn   = document.getElementById('analyze-btn');
+  const spinner      = document.getElementById('spinner');
+  const errorBox     = document.getElementById('error-box');
+  const resultsWrap  = document.getElementById('results-wrap');
+  const resultBody   = document.getElementById('result-body');
+  const countBadge   = document.getElementById('count-badge');
+  const printBtn     = document.getElementById('print-btn');
+  const dlBtn        = document.getElementById('dl-btn');
+  const csvBtn       = document.getElementById('csv-btn');
+
+  // ── File open ──
+  openBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  async function handleFile(file) {
+    fnameLabel.textContent = file.name;
+    selectedFile = file;
+    filename     = file.name;
+
+    try {
+      // PDF.js がブラウザ側で直接読み込む（サーバーへのアップロード不要）
+      const blobUrl = URL.createObjectURL(file);
+      pdfDoc   = await pdfjsLib.getDocument(blobUrl).promise;
+      totPages = pdfDoc.numPages;
+
+      viewerEmpty.style.display = 'none';
+      viewerMain.style.display  = 'flex';
+      sbEmpty.style.display     = 'none';
+      sbControls.style.display  = 'block';
+      selection = null;
+      analyzeBtn.disabled = true;
+      selInfo.textContent = 'ページ上でドラッグして範囲を選択してください';
+
+      await renderPage(1);
+    } catch (e) {
+      alert('ファイルの読み込みに失敗しました: ' + e.message);
+    }
+  }
+
+  // ── Page rendering ──
+  async function renderPage(num) {
+    curPage = num;
+    const page     = await pdfDoc.getPage(num);
+    const dpr      = window.devicePixelRatio || 1;
+    const viewport = page.getViewport({ scale: scale * dpr });
+
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.width  = (viewport.width  / dpr) + 'px';
+    canvas.style.height = (viewport.height / dpr) + 'px';
+
+    // Overlay matches CSS size
+    selOverlay.style.width  = canvas.style.width;
+    selOverlay.style.height = canvas.style.height;
+
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+    pageInfo.textContent  = `${num} / ${totPages}`;
+    prevBtn.disabled      = num <= 1;
+    nextBtn.disabled      = num >= totPages;
+
+    // Clear selection when changing page
+    clearSel();
+  }
+
+  prevBtn.addEventListener('click', () => { if (curPage > 1) renderPage(curPage - 1); });
+  nextBtn.addEventListener('click', () => { if (curPage < totPages) renderPage(curPage + 1); });
+  scaleSel.addEventListener('change', () => { scale = parseFloat(scaleSel.value); renderPage(curPage); });
+
+  // ── Drag selection ──
+  let dragging = false, sx = 0, sy = 0, cx = 0, cy = 0;
+
+  selOverlay.addEventListener('mousedown', e => {
+    const r = selOverlay.getBoundingClientRect();
+    sx = e.clientX - r.left;
+    sy = e.clientY - r.top;
+    cx = sx; cy = sy;
+    dragging = true;
+    selBox.style.display = 'block';
+    updateSelBox();
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const r = selOverlay.getBoundingClientRect();
+    cx = e.clientX - r.left;
+    cy = e.clientY - r.top;
+    updateSelBox();
+  });
+
+  window.addEventListener('mouseup', e => {
+    if (!dragging) return;
+    dragging = false;
+
+    const dpr = window.devicePixelRatio || 1;
+    const dx = Math.abs(cx - sx), dy = Math.abs(cy - sy);
+    if (dx < 8 || dy < 8) { clearSel(); return; }
+
+    // Convert CSS pixels → PDF points (CSS px / scale = PDF pt)
+    selection = {
+      page:   curPage,
+      x0:     Math.min(sx, cx) / scale,
+      top:    Math.min(sy, cy) / scale,
+      x1:     Math.max(sx, cx) / scale,
+      bottom: Math.max(sy, cy) / scale,
+    };
+    analyzeBtn.disabled = false;
+    selInfo.textContent = `ページ ${curPage} を選択中（${Math.round(dx)}×${Math.round(dy)} px）`;
+    hideError();
+  });
+
+  // Touch support
+  selOverlay.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    const r = selOverlay.getBoundingClientRect();
+    sx = t.clientX - r.left; sy = t.clientY - r.top;
+    cx = sx; cy = sy; dragging = true;
+    selBox.style.display = 'block';
+    e.preventDefault();
+  }, { passive: false });
+
+  selOverlay.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    const r = selOverlay.getBoundingClientRect();
+    cx = t.clientX - r.left; cy = t.clientY - r.top;
+    updateSelBox();
+    e.preventDefault();
+  }, { passive: false });
+
+  selOverlay.addEventListener('touchend', e => {
+    window.dispatchEvent(new MouseEvent('mouseup'));
+    e.preventDefault();
+  }, { passive: false });
+
+  function updateSelBox() {
+    const left = Math.min(sx, cx), top = Math.min(sy, cy);
+    selBox.style.left   = left + 'px';
+    selBox.style.top    = top  + 'px';
+    selBox.style.width  = Math.abs(cx - sx) + 'px';
+    selBox.style.height = Math.abs(cy - sy) + 'px';
+  }
+
+  function clearSel() {
+    selBox.style.display = 'none';
+    selection = null;
+    analyzeBtn.disabled = true;
+    selInfo.textContent = 'ページ上でドラッグして範囲を選択してください';
+  }
+
+  // ── Analyze ──
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selection || !selectedFile) return;
+    spinner.style.display = 'block';
+    analyzeBtn.disabled = true;
+    hideError();
+
+    try {
+      // PDFファイルを毎回送信（ステートレス設計）
+      const form = new FormData();
+      form.append('file',        selectedFile);
+      form.append('page',        selection.page);
+      form.append('x0',          selection.x0);
+      form.append('top',         selection.top);
+      form.append('x1',          selection.x1);
+      form.append('bottom',      selection.bottom);
+      form.append('unique_only', uniqueOnly.checked ? 'true' : 'false');
+
+      const res  = await fetch('/analyze_region', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.error) { showError(data.error); return; }
+      renderTable(data.readings, data.total);
+    } catch { showError('通信エラーが発生しました'); }
+    finally { spinner.style.display = 'none'; analyzeBtn.disabled = false; }
+  });
+
+  // ── Table rendering ──
+  function renderTable(readings, total) {
+    resultBody.innerHTML = '';
+    readings.forEach((r, i) => {
+      const tr   = document.createElement('tr');
+      const furi = document.createElement('td');
+      furi.className = 'td-furi';
+      furi.contentEditable = 'true';
+      furi.spellcheck = false;
+      furi.textContent = r.furigana;
+      furi.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); furi.blur(); }
+      });
+      tr.innerHTML = `<td class="td-no">${i + 1}</td><td class="td-word">${esc(r.word)}</td>`;
+      tr.appendChild(furi);
+      resultBody.appendChild(tr);
+    });
+    countBadge.textContent = `${total}件`;
+    resultsWrap.style.display = 'flex';
+  }
+
+  // ── Print ──
+  printBtn.addEventListener('click', () => window.print());
+
+  // ── Download editable HTML (uses current DOM values incl. edits) ──
+  dlBtn.addEventListener('click', async () => {
+    const readings = getCurrentReadings();
+    const res = await fetch('/download_table', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ readings, filename })
+    });
+    if (!res.ok) { showError('ダウンロードに失敗しました'); return; }
+    triggerDownload(await res.blob(), filename.replace(/\.pdf$/i, '') + '_振り仮名表.html');
+  });
+
+  // ── CSV (current DOM values) ──
+  csvBtn.addEventListener('click', () => {
+    const rows = [['No.', '単語', '読み仮名'],
+      ...getCurrentReadings().map((r, i) => [i + 1, r.word, r.furigana])];
+    const csv = '\uFEFF' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    triggerDownload(new Blob([csv], { type: 'text/csv' }), 'kanji_furigana.csv');
+  });
+
+  // ── Helpers ──
+  function getCurrentReadings() {
+    return Array.from(resultBody.querySelectorAll('tr')).map(tr => {
+      const tds = tr.querySelectorAll('td');
+      return { word: tds[1].textContent, furigana: tds[2].textContent.trim() };
+    });
+  }
+
+  function triggerDownload(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+  }
+
+  function showError(msg) { errorBox.textContent = msg; errorBox.style.display = 'block'; }
+  function hideError()    { errorBox.style.display = 'none'; }
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
