@@ -281,6 +281,13 @@
     .td-furi { color: #1a44c8; }
     .td-furi[contenteditable]:hover { background: #f0f3ff; cursor: text; }
     .td-furi[contenteditable]:focus { outline: 2px solid #4f6ef7; border-radius: 2px; background: white; }
+    .td-del { width: 30px; text-align: center; }
+    .del-btn {
+      background: none; border: 1px solid #e0e0e0; color: #c00;
+      width: 22px; height: 22px; border-radius: 4px; cursor: pointer;
+      font-size: 0.82rem; line-height: 1; padding: 0;
+    }
+    .del-btn:hover { background: #ffeeee; border-color: #f00; }
 
     .result-actions {
       display: flex;
@@ -320,6 +327,7 @@
       thead th { background: #f0f0f0 !important; border: 1px solid #999 !important; }
       tbody td { border: 1px solid #bbb !important; padding: 0.35rem 0.5rem; }
       .td-furi[contenteditable] { outline: none !important; }
+      .td-del, .del-btn { display: none !important; }
     }
   </style>
 </head>
@@ -376,7 +384,7 @@
       <div class="sb-section" id="sb-controls" style="display:none">
         <div class="sel-info-box" id="sel-info">ページ上でドラッグして範囲を選択してください</div>
         <div class="options-row">
-          <input type="checkbox" id="unique-only">
+          <input type="checkbox" id="unique-only" checked>
           <label for="unique-only">重複単語を除く</label>
         </div>
         <button class="analyze-btn" id="analyze-btn" disabled>この範囲を解析する</button>
@@ -390,7 +398,7 @@
           <span>振り仮名一覧</span>
           <span class="badge" id="count-badge"></span>
         </div>
-        <p class="edit-hint">✏️ 読み仮名をクリックして編集できます</p>
+        <p class="edit-hint">✏️ 読み仮名をクリックして編集・× で行を削除できます</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -398,6 +406,7 @@
                 <th class="td-no">No.</th>
                 <th>単語</th>
                 <th>読み仮名</th>
+                <th class="td-del"></th>
               </tr>
             </thead>
             <tbody id="result-body"></tbody>
@@ -627,22 +636,59 @@
   // ── Table rendering ──
   function renderTable(readings, total) {
     resultBody.innerHTML = '';
-    readings.forEach((r, i) => {
-      const tr   = document.createElement('tr');
-      const furi = document.createElement('td');
-      furi.className = 'td-furi';
-      furi.contentEditable = 'true';
-      furi.spellcheck = false;
-      furi.textContent = r.furigana;
-      furi.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); furi.blur(); }
-      });
-      tr.innerHTML = `<td class="td-no">${i + 1}</td><td class="td-word">${esc(r.word)}</td>`;
-      tr.appendChild(furi);
-      resultBody.appendChild(tr);
-    });
-    countBadge.textContent = `${total}件`;
+    readings.forEach(r => addRow(r.word, r.furigana));
+    updateCount();
     resultsWrap.style.display = 'flex';
+  }
+
+  function addRow(word, furigana) {
+    const tr = document.createElement('tr');
+
+    const tdNo = document.createElement('td');
+    tdNo.className = 'td-no';
+
+    const tdWord = document.createElement('td');
+    tdWord.className = 'td-word';
+    tdWord.textContent = word;
+
+    const tdFuri = document.createElement('td');
+    tdFuri.className = 'td-furi';
+    tdFuri.contentEditable = 'true';
+    tdFuri.spellcheck = false;
+    tdFuri.textContent = furigana;
+    tdFuri.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); tdFuri.blur(); }
+    });
+
+    const tdDel = document.createElement('td');
+    tdDel.className = 'td-del';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.textContent = '×';
+    delBtn.title = '削除';
+    delBtn.addEventListener('click', () => {
+      tr.remove();
+      renumber();
+      updateCount();
+    });
+    tdDel.appendChild(delBtn);
+
+    tr.appendChild(tdNo);
+    tr.appendChild(tdWord);
+    tr.appendChild(tdFuri);
+    tr.appendChild(tdDel);
+    resultBody.appendChild(tr);
+    renumber();
+  }
+
+  function renumber() {
+    resultBody.querySelectorAll('tr').forEach((tr, i) => {
+      tr.querySelector('.td-no').textContent = i + 1;
+    });
+  }
+
+  function updateCount() {
+    countBadge.textContent = resultBody.querySelectorAll('tr').length + '件';
   }
 
   // ── Print ──

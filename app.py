@@ -67,11 +67,12 @@ def get_word_readings(text, unique_only=False):
         if not KANJI_RE.search(orig):
             continue
 
-        # 直前がカタカナなら先頭に付加（チェーン店・パソコン周辺機器 等）
+        # 直前がカタカナなら先頭に付加（チェーン店 など）
+        # 振り仮名は漢字部分のみ（カタカナは自明なため不要）
         if i > 0 and KATAKANA_RE.match(segments[i - 1]['orig']):
             kata = segments[i - 1]['orig']
             word_surf = kata + orig
-            word_read = kata + hira
+            word_read = hira   # 漢字部分の読みのみ
         else:
             word_surf = orig
             word_read = hira
