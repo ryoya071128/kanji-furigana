@@ -1,5 +1,5 @@
 flask
-pdfplumber
+pdfminer.six
 fugashi[unidic-lite]
 unidic-lite
 werkzeug

@@ -4,7 +4,8 @@ import uuid
 from html import escape
 from urllib.parse import quote
 from flask import Flask, render_template, request, jsonify, Response
-import pdfplumber
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextBox, LAParams
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
@@ -22,6 +23,31 @@ def get_tagger():
         import unidic_lite
         _tagger = fugashi.Tagger(f'-d {unidic_lite.DICDIR}')
     return _tagger
+
+
+def extract_region_text(filepath, page_num, x0, top, x1, bottom):
+    """pdfminer.six で指定ページ・領域のテキストを抽出する。
+    座標はPDF.jsと同じ top-left 基準（pdfminer は bottom-left なので変換する）。
+    """
+    laparams = LAParams(boxes_flow=0.5, word_margin=0.1)
+    boxes = []
+
+    with open(filepath, 'rb') as f:
+        for layout in extract_pages(f, laparams=laparams, page_numbers=[page_num - 1]):
+            h = layout.height
+            # top-left 座標 → pdfminer bottom-left 座標へ変換
+            pm_y0 = h - bottom   # 選択範囲の下端（ページ下から）
+            pm_y1 = h - top      # 選択範囲の上端（ページ下から）
+
+            for el in layout:
+                if isinstance(el, LTTextBox):
+                    ex0, ey0, ex1, ey1 = el.bbox
+                    # 選択範囲と重なるテキストボックスを収集
+                    if ex0 < x1 and ex1 > x0 and ey0 < pm_y1 and ey1 > pm_y0:
+                        boxes.append((-ey1, ex0, el.get_text().strip()))
+
+    boxes.sort()  # 上から下、左から右の順に並び替え
+    return '\n'.join(t for _, _, t in boxes if t)
 
 
 def kata_to_hira(text):
@@ -158,17 +184,7 @@ def analyze_region():
     filepath = f'/tmp/{uuid.uuid4()}.pdf'
     file.save(filepath)
     try:
-        with pdfplumber.open(filepath) as pdf:
-            if page_num < 1 or page_num > len(pdf.pages):
-                return jsonify({'error': 'ページ番号が不正です'}), 400
-            page = pdf.pages[page_num - 1]
-            x0c = max(0, min(x0, page.width))
-            x1c = max(0, min(x1, page.width))
-            tc  = max(0, min(top,    page.height))
-            bc  = max(0, min(bottom, page.height))
-            if x1c <= x0c or bc <= tc:
-                return jsonify({'error': '選択範囲が小さすぎます'}), 400
-            text = page.crop((x0c, tc, x1c, bc)).extract_text() or ''
+        text = extract_region_text(filepath, page_num, x0, top, x1, bottom)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
