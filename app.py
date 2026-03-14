@@ -5,14 +5,23 @@ from html import escape
 from urllib.parse import quote
 from flask import Flask, render_template, request, jsonify, Response
 import pdfplumber
-import fugashi
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
 KANJI_RE = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
-_tagger = fugashi.Tagger()
+
+# サーバーレス環境向けに遅延初期化
+_tagger = None
+
+def get_tagger():
+    global _tagger
+    if _tagger is None:
+        import fugashi
+        import unidic_lite
+        _tagger = fugashi.Tagger(f'-d {unidic_lite.DICDIR}')
+    return _tagger
 
 
 def kata_to_hira(text):
@@ -52,7 +61,7 @@ def get_word_readings(text, unique_only=False):
         seen.add(surf)
         readings.append({'word': surf, 'furigana': read})
 
-    for word in _tagger(text):
+    for word in get_tagger()(text):
         surface = word.surface
         if KANJI_RE.search(surface):
             pend_surf += surface
