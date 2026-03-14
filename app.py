@@ -11,8 +11,8 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 
-KANJI_RE      = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
-PURE_KANJI_RE = re.compile(r'^[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]+$')
+KANJI_RE    = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
+KATAKANA_RE = re.compile(r'^[\u30a0-\u30ff]+$')
 
 # サーバーレス環境向けに遅延初期化（pykakasi は純Python・軽量）
 _kakasi = None
@@ -51,44 +51,38 @@ def extract_region_text(filepath, page_num, x0, top, x1, bottom):
 
 
 def get_word_readings(text, unique_only=False):
-    """隣接する漢字セグメントをひとつの複合語としてまとめる。
-    例: 人手(ひとで) + 不足(ふそく) → 人手不足(ひとでふそく)
+    """漢字を含む単語を抽出する。
+    ・直前のカタカナも単語に含める（例: チェーン+店 → チェーン店）
+    ・pykakasi は複合語を1セグメントで返すので連結処理は不要
     """
     kks = get_kakasi()
+    segments = list(kks.convert(text))
     readings = []
     seen = set()
-    pend_surf = ''
-    pend_read = ''
 
-    def flush():
-        nonlocal pend_surf, pend_read
-        if not pend_surf or not pend_read:
-            pend_surf = pend_read = ''
-            return
-        surf, read = pend_surf, pend_read
-        pend_surf = pend_read = ''
-        if unique_only and surf in seen:
-            return
-        seen.add(surf)
-        readings.append({'word': surf, 'furigana': read})
+    for i, seg in enumerate(segments):
+        orig = seg['orig']
+        hira = seg['hira']
 
-    for item in kks.convert(text):
-        orig = item['orig']
-        hira = item['hira']
-        if PURE_KANJI_RE.match(orig):
-            # 純粋な漢字のみ → 隣接するものと結合（例: 人手+不足 → 人手不足）
-            pend_surf += orig
-            pend_read += hira
-        elif KANJI_RE.search(orig):
-            # 漢字+仮名混合（例: 食べる）→ 前の蓄積を確定してから単独で追加
-            flush()
-            if hira and not unique_only or orig not in seen:
-                seen.add(orig)
-                readings.append({'word': orig, 'furigana': hira})
+        if not KANJI_RE.search(orig):
+            continue
+
+        # 直前がカタカナなら先頭に付加（チェーン店・パソコン周辺機器 等）
+        if i > 0 and KATAKANA_RE.match(segments[i - 1]['orig']):
+            kata = segments[i - 1]['orig']
+            word_surf = kata + orig
+            word_read = kata + hira
         else:
-            flush()
+            word_surf = orig
+            word_read = hira
 
-    flush()
+        if not word_read:
+            continue
+        if unique_only and word_surf in seen:
+            continue
+        seen.add(word_surf)
+        readings.append({'word': word_surf, 'furigana': word_read})
+
     return readings
 
 
