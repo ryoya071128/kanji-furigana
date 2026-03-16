@@ -15,29 +15,6 @@ KANJI_RE    = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\U00020000-\U0002a6df]')
 KATAKANA_RE = re.compile(r'^[\u30a0-\u30ff]+$')
 HIRAGANA_RE = re.compile(r'^[\u3041-\u3096ー]+$')
 
-# ─── 文脈依存の読み修正テーブル ─────────────────────────────────────────
-# pykakasi は単語単位で変換するため、文脈によって読みが変わる漢字を補正する
-# (直前の orig, 現在の orig) → 正しい読み仮名
-_LEFT_CTX_OVERRIDES = {
-    # 際: 指示語・「の」+ 際 → さい（この際/その際/〜の際 など）
-    ('この', '際'): 'さい',
-    ('その', '際'): 'さい',
-    ('あの', '際'): 'さい',
-    ('どの', '際'): 'さい',
-    ('の',   '際'): 'さい',   # 〜の際は/〜の際に
-    # 人: 指示語 + 人 → ひと
-    ('この', '人'): 'ひと',
-    ('その', '人'): 'ひと',
-    ('あの', '人'): 'ひと',
-    ('どの', '人'): 'ひと',
-    ('ある', '人'): 'ひと',
-}
-
-# (現在の orig, 直後の orig) → 正しい読み仮名
-_RIGHT_CTX_OVERRIDES = {
-    ('際', '立'): 'きわ',   # 際立つ → きわだ
-    ('人', '々'): 'ひと',   # 人々   → ひとびと
-}
 
 # サーバーレス環境向けに遅延初期化（pykakasi は純Python・軽量）
 _kakasi = None
@@ -99,15 +76,23 @@ def get_word_readings(text, unique_only=False):
             continue
 
         # ─── 文脈依存の読み修正 ──────────────────────────────────────
+        # endswith を使うことで「利用の」のように の が前セグメント末尾に
+        # 含まれるケースも確実に拾える
         prev_orig = segments[i - 1]['orig'] if i > 0 else ''
         next_orig = segments[i + 1]['orig'] if i + 1 < len(segments) else ''
-        hira = _LEFT_CTX_OVERRIDES.get(
-            (prev_orig, orig),
-            _RIGHT_CTX_OVERRIDES.get((orig, next_orig), hira)
-        )
-        # 人 の直後がひらがな（助詞・助動詞等）なら ひと
-        if orig == '人' and hira in ('にん', 'じん') and HIRAGANA_RE.match(next_orig):
-            hira = 'ひと'
+        if orig == '際' and hira == 'きわ':
+            # 〜の際 / この際 / その際 … → さい
+            if prev_orig.endswith(('の', 'この', 'その', 'あの', 'どの')):
+                hira = 'さい'
+        elif orig == '人' and hira in ('にん', 'じん'):
+            # 指示語 + 人 → ひと
+            if prev_orig.endswith(('この', 'その', 'あの', 'どの', 'ある')):
+                hira = 'ひと'
+            # 人 + 助詞（ひらがなのみ）→ ひと
+            elif HIRAGANA_RE.match(next_orig):
+                hira = 'ひと'
+        elif orig == '人' and next_orig == '々':
+            hira = 'ひと'   # 人々 → ひとびと
         # ─────────────────────────────────────────────────────────────
 
         # 直前がカタカナなら先頭に付加（チェーン店 など）
