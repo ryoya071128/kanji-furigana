@@ -160,19 +160,19 @@ def generate_table_html(readings, original_filename):
     .print-btn {{ padding: 0.38rem 1.1rem; background: #4f6ef7; color: white; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; }}
     .print-btn:hover {{ background: #3a56d4; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 10pt; }}
-    thead th {{ background: #f0f0f0; padding: 0.3rem 0.4rem; text-align: left; border: 1px solid #ccc; font-weight: bold; }}
-    tbody td {{ padding: 0.25rem 0.4rem; border: 1px solid #ddd; vertical-align: middle; }}
-    .no {{ width: 36px; color: #999; font-size: 0.82em; text-align: center; }}
-    .word {{ font-weight: bold; width: 22%; }}
-    .furi {{ color: #1a44c8; width: 22%; }}
-    .sep {{ width: 8px; background: #f5f5f5; border-color: #bbb !important; padding: 0 !important; }}
+    thead th {{ background: #f0f0f0; padding: 0.25rem 0.2rem; text-align: left; border: 1px solid #ccc; font-weight: bold; }}
+    tbody td {{ padding: 0.2rem 0.2rem; border: 1px solid #ddd; vertical-align: middle; }}
+    .no {{ width: 28px; color: #999; font-size: 0.82em; text-align: center; padding: 0.2rem 0.1rem !important; }}
+    .word {{ font-weight: bold; width: 20%; }}
+    .furi {{ color: #1a44c8; width: 14%; white-space: nowrap; }}
+    .sep {{ width: 6px; background: #f5f5f5; border-color: #bbb !important; padding: 0 !important; }}
     .furi[contenteditable]:hover {{ background: #f5f7ff; cursor: text; }}
     .furi[contenteditable]:focus {{ outline: 2px solid #4f6ef7; background: #fff; }}
     @media print {{
       .toolbar {{ display: none !important; }}
       body {{ padding: 0.4cm 0.8cm; font-size: 9pt; }}
       table {{ font-size: 9pt; }}
-      td, th {{ border-color: #999 !important; padding: 0.18rem 0.35rem !important; }}
+      td, th {{ border-color: #999 !important; padding: 0.15rem 0.15rem !important; }}
     }}
   </style>
 </head>
