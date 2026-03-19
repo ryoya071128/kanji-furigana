@@ -116,27 +116,36 @@ def get_word_readings(text, unique_only=False):
 
 
 def generate_table_html(readings, original_filename):
-    # 2列グリッド：各エントリーを「漢字 / 振り仮名」縦積みカードで表示
-    COLS = 2
-    cards = []
-    for i, r in enumerate(readings, 1):
+    COLS = 3  # 1行あたりの単語グループ数
+
+    def entry_cells(num, r, editable=True):
         word = escape(r.get('word', ''))
         furi = escape(r.get('furigana', ''))
-        cards.append(
-            f'<td class="entry">'
-            f'<span class="no">{i}</span>'
-            f'<span class="word">{word}</span>'
-            f'<span class="furi" contenteditable="true" spellcheck="false">{furi}</span>'
-            f'</td>'
+        ce = ' contenteditable="true" spellcheck="false"' if editable else ''
+        return (
+            f'<td class="no">{num}</td>'
+            f'<td class="word">{word}</td>'
+            f'<td class="furi"{ce}>{furi}</td>'
         )
 
+    header_cells = ''
+    for j in range(COLS):
+        if j > 0:
+            header_cells += '<th class="sep"></th>'
+        header_cells += '<th class="no">No.</th><th class="word">単語</th><th class="furi">読み仮名</th>'
+
     rows = []
-    for i in range(0, len(cards), COLS):
-        chunk = cards[i:i + COLS]
-        # 最終行が埋まらない場合は空セルで補完
-        while len(chunk) < COLS:
-            chunk.append('<td class="entry empty"></td>')
-        rows.append(f'<tr>{"".join(chunk)}</tr>')
+    for i in range(0, len(readings), COLS):
+        chunk = readings[i:i + COLS]
+        cells = ''
+        for j in range(COLS):
+            if j > 0:
+                cells += '<td class="sep"></td>'
+            if j < len(chunk):
+                cells += entry_cells(i + j + 1, chunk[j])
+            else:
+                cells += '<td></td><td></td><td></td>'
+        rows.append(f'<tr>{cells}</tr>')
 
     rows_html = '\n'.join(rows)
     title = escape(original_filename)
@@ -152,29 +161,30 @@ def generate_table_html(readings, original_filename):
     .toolbar p {{ flex: 1; font-size: 0.82rem; color: #666; }}
     .print-btn {{ padding: 0.38rem 1.1rem; background: #4f6ef7; color: white; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; }}
     .print-btn:hover {{ background: #3a56d4; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    .entry {{ width: 50%; border: 1px solid #ddd; padding: 0.25rem 0.5rem; vertical-align: top; }}
-    .entry.empty {{ background: #fafafa; }}
-    .entry {{ display: table-cell; }}
-    .no {{ display: block; font-size: 0.72em; color: #aaa; line-height: 1.2; }}
-    .word {{ display: block; font-weight: bold; font-size: 1.05em; line-height: 1.4; }}
-    .furi {{ display: block; color: #1a44c8; font-size: 0.95em; line-height: 1.3; min-height: 1.2em; }}
-    .furi[contenteditable]:hover {{ background: #f5f7ff; cursor: text; outline: 1px dashed #4f6ef7; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 10pt; }}
+    thead th {{ background: #f0f0f0; padding: 0.25rem 0.2rem; text-align: left; border: 1px solid #ccc; font-weight: bold; }}
+    tbody td {{ padding: 0.2rem 0.2rem; border: 1px solid #ddd; vertical-align: middle; }}
+    .no {{ width: 24px; color: #999; font-size: 0.82em; text-align: center; }}
+    .word {{ font-weight: bold; }}
+    .furi {{ color: #1a44c8; white-space: nowrap; }}
+    .sep {{ width: 5px; background: #f5f5f5; border-color: #bbb !important; padding: 0 !important; }}
+    .furi[contenteditable]:hover {{ background: #f5f7ff; cursor: text; }}
     .furi[contenteditable]:focus {{ outline: 2px solid #4f6ef7; background: #fff; }}
     @media print {{
       .toolbar {{ display: none !important; }}
       body {{ padding: 0.4cm 0.8cm; font-size: 9pt; }}
-      .entry {{ padding: 0.15rem 0.4rem; }}
-      td {{ border-color: #999 !important; }}
+      table {{ font-size: 9pt; }}
+      td, th {{ border-color: #999 !important; padding: 0.12rem 0.15rem !important; }}
     }}
   </style>
 </head>
 <body>
   <div class="toolbar">
-    <p><strong>振り仮名表：{title}</strong><br>振り仮名をクリックして直接編集できます。</p>
+    <p><strong>振り仮名表：{title}</strong><br>読み仮名をクリックして直接編集できます。</p>
     <button class="print-btn" onclick="window.print()">印刷 / PDF保存</button>
   </div>
   <table>
+    <thead><tr>{header_cells}</tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
   <script>
