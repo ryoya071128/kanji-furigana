@@ -116,17 +116,35 @@ def get_word_readings(text, unique_only=False):
 
 
 def generate_table_html(readings, original_filename):
+    # 2カラムレイアウト：データを半分に分割して左右に並べる
+    half = (len(readings) + 1) // 2
+    left  = readings[:half]
+    right = readings[half:]
+
     rows = []
-    for i, r in enumerate(readings, 1):
-        word = escape(r.get('word', ''))
-        furi = escape(r.get('furigana', ''))
-        rows.append(
-            f'<tr>'
-            f'<td class="no">{i}</td>'
-            f'<td class="word">{word}</td>'
-            f'<td class="furi" contenteditable="true" spellcheck="false">{furi}</td>'
-            f'</tr>'
+    for i in range(half):
+        li = i + 1
+        lw = escape(left[i].get('word', ''))
+        lf = escape(left[i].get('furigana', ''))
+        left_cells = (
+            f'<td class="no">{li}</td>'
+            f'<td class="word">{lw}</td>'
+            f'<td class="furi" contenteditable="true" spellcheck="false">{lf}</td>'
         )
+        if i < len(right):
+            ri = half + i + 1
+            rw = escape(right[i].get('word', ''))
+            rf = escape(right[i].get('furigana', ''))
+            right_cells = (
+                f'<td class="sep"></td>'
+                f'<td class="no">{ri}</td>'
+                f'<td class="word">{rw}</td>'
+                f'<td class="furi" contenteditable="true" spellcheck="false">{rf}</td>'
+            )
+        else:
+            right_cells = '<td class="sep"></td><td></td><td></td><td></td>'
+        rows.append(f'<tr>{left_cells}{right_cells}</tr>')
+
     rows_html = '\n'.join(rows)
     title = escape(original_filename)
     return f"""<!DOCTYPE html>
@@ -136,23 +154,25 @@ def generate_table_html(readings, original_filename):
   <title>振り仮名表 — {title}</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: 'Hiragino Sans','Yu Gothic',sans-serif; font-size: 11pt; color: #111; padding: 1.5rem 2rem; }}
-    .toolbar {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 1.2rem; padding-bottom: 0.9rem; border-bottom: 1px solid #ccc; }}
+    body {{ font-family: 'Hiragino Sans','Yu Gothic',sans-serif; font-size: 10pt; color: #111; padding: 1.2rem 1.5rem; }}
+    .toolbar {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid #ccc; }}
     .toolbar p {{ flex: 1; font-size: 0.82rem; color: #666; }}
     .print-btn {{ padding: 0.38rem 1.1rem; background: #4f6ef7; color: white; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; }}
     .print-btn:hover {{ background: #3a56d4; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 11pt; }}
-    thead th {{ background: #f0f0f0; padding: 0.55rem 0.8rem; text-align: left; border: 1px solid #ccc; font-weight: bold; }}
-    tbody td {{ padding: 0.45rem 0.8rem; border: 1px solid #ddd; vertical-align: middle; }}
-    .no {{ width: 52px; color: #999; font-size: 0.85em; text-align: center; }}
-    .word {{ font-size: 1.05em; font-weight: bold; width: 35%; }}
-    .furi {{ color: #1a44c8; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 10pt; }}
+    thead th {{ background: #f0f0f0; padding: 0.3rem 0.4rem; text-align: left; border: 1px solid #ccc; font-weight: bold; }}
+    tbody td {{ padding: 0.25rem 0.4rem; border: 1px solid #ddd; vertical-align: middle; }}
+    .no {{ width: 36px; color: #999; font-size: 0.82em; text-align: center; }}
+    .word {{ font-weight: bold; width: 22%; }}
+    .furi {{ color: #1a44c8; width: 22%; }}
+    .sep {{ width: 8px; background: #f5f5f5; border-color: #bbb !important; padding: 0 !important; }}
     .furi[contenteditable]:hover {{ background: #f5f7ff; cursor: text; }}
     .furi[contenteditable]:focus {{ outline: 2px solid #4f6ef7; background: #fff; }}
     @media print {{
       .toolbar {{ display: none !important; }}
-      body {{ padding: 0.5cm 1cm; }}
-      td, th {{ border-color: #999 !important; }}
+      body {{ padding: 0.4cm 0.8cm; font-size: 9pt; }}
+      table {{ font-size: 9pt; }}
+      td, th {{ border-color: #999 !important; padding: 0.18rem 0.35rem !important; }}
     }}
   </style>
 </head>
@@ -162,7 +182,13 @@ def generate_table_html(readings, original_filename):
     <button class="print-btn" onclick="window.print()">印刷 / PDF保存</button>
   </div>
   <table>
-    <thead><tr><th class="no">No.</th><th class="word">単語</th><th class="furi">読み仮名（クリックで編集）</th></tr></thead>
+    <thead>
+      <tr>
+        <th class="no">No.</th><th class="word">単語</th><th class="furi">読み仮名</th>
+        <th class="sep"></th>
+        <th class="no">No.</th><th class="word">単語</th><th class="furi">読み仮名</th>
+      </tr>
+    </thead>
     <tbody>{rows_html}</tbody>
   </table>
   <script>
