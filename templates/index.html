@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>漢字読み仮名抽出ツール</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -108,7 +107,7 @@
       box-shadow: 0 6px 24px rgba(0,0,0,0.5);
       cursor: crosshair;
     }
-    #pdf-canvas { display: block; }
+    #pdf-img { display: block; user-select: none; -webkit-user-drag: none; }
 
     /* Selection overlay (transparent, catches mouse events) */
     .sel-overlay {
@@ -367,7 +366,7 @@
           <span class="hint-label">ドラッグで範囲選択</span>
         </div>
         <div class="canvas-wrap" id="canvas-wrap">
-          <canvas id="pdf-canvas"></canvas>
+          <img id="pdf-img" draggable="false" alt="">
           <div class="sel-overlay" id="sel-overlay"></div>
           <div class="sel-box" id="sel-box"></div>
         </div>
@@ -427,16 +426,12 @@
 </div>
 
 <script>
-  // ── PDF.js setup ──
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
   // ── State ──
-  let pdfDoc      = null;
+  const RENDER_SCALE = 2.0;  // サーバー側レンダリング倍率（高解像度）
   let curPage     = 1;
   let totPages    = 0;
   let scale       = 1.5;
-  let selectedFile = null;   // File object kept for re-sending with each analyze
+  let selectedFile = null;
   let filename    = '';
   let selection   = null;    // { page, x0, top, x1, bottom } in PDF pts
 
@@ -450,7 +445,7 @@
   const nextBtn      = document.getElementById('next-btn');
   const pageInfo     = document.getElementById('page-info');
   const scaleSel     = document.getElementById('scale-sel');
-  const canvas       = document.getElementById('pdf-canvas');
+  const pdfImg       = document.getElementById('pdf-img');
   const selOverlay   = document.getElementById('sel-overlay');
   const selBox       = document.getElementById('sel-box');
   const sbEmpty      = document.getElementById('sb-empty');
@@ -478,55 +473,71 @@
     selectedFile = file;
     filename     = file.name;
 
+    viewerEmpty.style.display = 'none';
+    viewerMain.style.display  = 'flex';
+    sbEmpty.style.display     = 'none';
+    sbControls.style.display  = 'block';
+    selection = null;
+    analyzeBtn.disabled = true;
+    selInfo.textContent = 'ページ上でドラッグして範囲を選択してください';
+    curPage = 1;
+
+    await renderPage(1);
+  }
+
+  // ── Page rendering（サーバー側でPyMuPDFがレンダリング）──
+  async function renderPage(num) {
+    curPage = num;
+    const form = new FormData();
+    form.append('file', selectedFile);
+    form.append('page', num);
+
     try {
-      // PDF.js がブラウザ側で直接読み込む（サーバーへのアップロード不要）
-      const blobUrl = URL.createObjectURL(file);
-      pdfDoc   = await pdfjsLib.getDocument(blobUrl).promise;
-      totPages = pdfDoc.numPages;
+      const res = await fetch('/render_page', { method: 'POST', body: form });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'レンダリング失敗');
+      }
 
-      viewerEmpty.style.display = 'none';
-      viewerMain.style.display  = 'flex';
-      sbEmpty.style.display     = 'none';
-      sbControls.style.display  = 'block';
-      selection = null;
-      analyzeBtn.disabled = true;
-      selInfo.textContent = 'ページ上でドラッグして範囲を選択してください';
+      const pageCount = res.headers.get('X-Page-Count');
+      if (pageCount) totPages = parseInt(pageCount);
 
-      await renderPage(1);
+      const blob = await res.blob();
+      if (pdfImg.src.startsWith('blob:')) URL.revokeObjectURL(pdfImg.src);
+
+      await new Promise((resolve, reject) => {
+        pdfImg.onload  = resolve;
+        pdfImg.onerror = reject;
+        pdfImg.src = URL.createObjectURL(blob);
+      });
+
+      updateImgSize();
+      pageInfo.textContent = `${num} / ${totPages}`;
+      prevBtn.disabled     = num <= 1;
+      nextBtn.disabled     = num >= totPages;
+      clearSel();
     } catch (e) {
-      alert('ファイルの読み込みに失敗しました: ' + e.message);
+      console.error('renderPage error:', e);
+      alert('ページの表示に失敗しました: ' + e.message);
     }
   }
 
-  // ── Page rendering ──
-  async function renderPage(num) {
-    curPage = num;
-    const page     = await pdfDoc.getPage(num);
-    const dpr      = window.devicePixelRatio || 1;
-    const viewport = page.getViewport({ scale: scale * dpr });
-
-    canvas.width  = viewport.width;
-    canvas.height = viewport.height;
-    canvas.style.width  = (viewport.width  / dpr) + 'px';
-    canvas.style.height = (viewport.height / dpr) + 'px';
-
-    // Overlay matches CSS size
-    selOverlay.style.width  = canvas.style.width;
-    selOverlay.style.height = canvas.style.height;
-
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-
-    pageInfo.textContent  = `${num} / ${totPages}`;
-    prevBtn.disabled      = num <= 1;
-    nextBtn.disabled      = num >= totPages;
-
-    // Clear selection when changing page
-    clearSel();
+  function updateImgSize() {
+    const w = (pdfImg.naturalWidth  / RENDER_SCALE) * scale;
+    const h = (pdfImg.naturalHeight / RENDER_SCALE) * scale;
+    pdfImg.style.width  = w + 'px';
+    pdfImg.style.height = h + 'px';
+    selOverlay.style.width  = w + 'px';
+    selOverlay.style.height = h + 'px';
   }
 
   prevBtn.addEventListener('click', () => { if (curPage > 1) renderPage(curPage - 1); });
   nextBtn.addEventListener('click', () => { if (curPage < totPages) renderPage(curPage + 1); });
-  scaleSel.addEventListener('change', () => { scale = parseFloat(scaleSel.value); renderPage(curPage); });
+  scaleSel.addEventListener('change', () => {
+    scale = parseFloat(scaleSel.value);
+    if (pdfImg.naturalWidth) updateImgSize();
+    clearSel();
+  });
 
   // ── Drag selection ──
   let dragging = false, sx = 0, sy = 0, cx = 0, cy = 0;

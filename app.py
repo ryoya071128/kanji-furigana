@@ -251,5 +251,40 @@ def download_table():
     )
 
 
+@app.route('/render_page', methods=['POST'])
+def render_page():
+    """PDFの1ページを画像として返す（PyMuPDF使用）"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'no file'}), 400
+    file = request.files['file']
+    if not file or not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'PDFファイルを選択してください'}), 400
+
+    page_num = int(request.form.get('page', 1))
+
+    filepath = f'/tmp/{uuid.uuid4()}.pdf'
+    file.save(filepath)
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(filepath)
+        total = len(doc)
+        page_idx = max(0, min(page_num - 1, total - 1))
+        page = doc[page_idx]
+        mat = fitz.Matrix(2.0, 2.0)  # 2x 高解像度
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img_bytes = pix.tobytes('png')
+        doc.close()
+        return Response(
+            img_bytes,
+            mimetype='image/png',
+            headers={'X-Page-Count': str(total), 'Access-Control-Expose-Headers': 'X-Page-Count'}
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+
 if __name__ == '__main__':
     app.run(debug=True)
